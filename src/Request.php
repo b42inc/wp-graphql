@@ -609,18 +609,22 @@ class Request {
 
 		$params         = $this->get_params();
 		$operation_name = isset( $params->operation ) ? $params->operation : '';
+		$query          = isset( $params->query ) ? $params->query : '';
 		$variables      = isset( $params->variables ) ? $params->variables : null;
-		$transient_key  = md5($operation_name . json_encode( $variables ) . $nonce);
+		$transient_key  = md5($operation_name . $query . json_encode( $variables ));
+		$is_logged_in   = is_user_logged_in();
 
 		// ホントはAPCuを使いたい
 		$response 			= get_transient( $transient_key );
 
-		if ( $response == false ) {
+		if ( $response == false || $is_logged_in ) {
 			$server   = $this->get_server();
 			$response = $server->executeRequest( $this->params );
 
-			// ホントはAPCuを使いたい
-			set_transient( $transient_key, $response, 60 * 60 * 24 );
+			if ( !$is_logged_in ) {
+				// ホントはAPCuを使いたい
+				set_transient( $transient_key, $response, 60 * 60 * 24 );
+			}
 		}
 
 		return $this->after_execute( $response );
