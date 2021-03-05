@@ -583,7 +583,19 @@ class Request {
 	 * @throws Exception
 	 */
 	public function execute_http() {
+		$nonce = null;
 
+		if ( isset( $_REQUEST['_wpnonce'] ) ) {
+			$nonce = $_REQUEST['_wpnonce'];
+		} elseif ( isset( $_SERVER['HTTP_X_WP_NONCE'] ) ) {
+			$nonce = $_SERVER['HTTP_X_WP_NONCE'];
+		}
+
+		// nonceを必須化
+		if ( $nonce === null || !wp_verify_nonce( $nonce, 'wp_rest' ) ) {
+			throw new Exception( __( 'Authentication Error', 'wp-graphql' ) );
+		}
+		
 		/**
 		 * Parse HTTP request.
 		 */
@@ -595,11 +607,21 @@ class Request {
 		 */
 		$this->before_execute();
 
-		/**
-		 * Get the response.
-		 */
-		$server   = $this->get_server();
-		$response = $server->executeRequest( $this->params );
+		$params         = $this->get_params();
+		$operation_name = isset( $params->operation ) ? $params->operation : '';
+		$variables      = isset( $params->variables ) ? $params->variables : null;
+		$transient_key  = md5($operation_name . json_encode( $variables ) . $nonce);
+
+		// ホントはAPCuを使いたい
+		$response 			= get_transient( $transient_key );
+
+		if ( $response == false ) {
+			$server   = $this->get_server();
+			$response = $server->executeRequest( $this->params );
+
+			// ホントはAPCuを使いたい
+			set_transient( $transient_key, $response, 60 * 60 * 24 );
+		}
 
 		return $this->after_execute( $response );
 	}
